@@ -1,0 +1,173 @@
+###### Team member: Yarou Ding, Kevin Hsiau, Chih-Yun Chang
+
+#############################################Part 1 : Image processing#######################
+
+#Install the packages and load the libraries
+
+install.packages("devtools")
+install.packages("imager")
+install.packages("png")
+library("imager")
+library("png")
+
+
+# Set up the forder where store training images
+############ Train file ListImageID_for_test #########
+folder<- setwd("F:/")
+
+############ Test file ListImageID_for_test ##########
+test_folder <- "F:/test"
+testfile<- read.csv(file = paste0(folder,'sample_submission.csv'))
+ListImageID_test=testfile[,1]
+length(ListImageID_test)
+ListImageID_for_test <- as.character(sample(ListImageID_test,size = 2000))
+
+
+
+####Reading file ID ######
+trainfile<- read.csv(file = paste0(folder,'train.csv'))
+ListImageID <- trainfile[,1]
+length(ListImageID)
+ListImageID_for_model <- as.character(sample(ListImageID,size = 5000))
+
+# Set a function of resizing the image and analyzing Greyscale
+
+resizeAndGrayscaleImg <- function(imgId,test=FALSE) {
+  subfile=ifelse(test==FALSE,"train","test")
+  imgIdPath <- paste0(imgId,".png")
+  imgPath <- paste0(folder,"/",subfile,"/",imgIdPath)
+  #imgInfo <- readPNG(imgPath)
+  x=load.image(imgPath)
+  imgResize <- resize(x, size_x = 200, size_y = 140)
+  imgGrayscale <- grayscale(imgResize)
+  return (imgGrayscale)
+}
+
+
+#function of standarize image information
+
+train_table=c()
+for (i in 1:length(ListImageID_for_model) ){
+  img_id=as.character(ListImageID_for_model[i])
+  img_info=resizeAndGrayscaleImg(img_id)
+  
+  train_table=rbind(train_table,img_info)
+  row.names(train_table)[i]=img_id
+}
+
+head(train_table[,1:10])
+
+
+################################ Part 2 : Creating train data set and attribute matrix ############################
+
+library(dplyr)
+library(tidyr)
+##### Label file
+Labels <- read.csv(file = 'labels.csv')
+Labels_atrributes_id <- Labels[,1]
+Labels_atrributes_id <- as.character(Labels_atrributes_id)
+
+Labels_name=data.frame(attribute_name=as.character(Labels[,2]))%>%separate(attribute_name,c("A","B"),sep="::")
+
+  #unique of Labels A part
+unique_Label=unique(Labels_name[,1])
+country=Labels_atrributes_id[Labels_name[,1]==unique_Label[1]]
+culture=Labels_atrributes_id[Labels_name[,1]==unique_Label[2]]
+dimension=Labels_atrributes_id[Labels_name[,1]==unique_Label[3]]
+medium=Labels_atrributes_id[Labels_name[,1]==unique_Label[4]]
+tags=Labels_atrributes_id[Labels_name[,1]==unique_Label[5]]
+
+
+##### train file
+trainfile <- read.csv(file = 'train.csv')
+Train_ListImageID <- trainfile[,1]
+Train_Attributes <-  trainfile[,2]
+
+#Train_ListImageID_test <- Train_ListImageID[1:100]
+#Train_Attributes_test <-  Train_Attributes[1:100]
+
+
+######Reading atrributes into files 
+attributies_table_2=c()
+for (i in 1: length(ListImageID_for_model)){
+  data_row=which(ListImageID_for_model[i]==Train_ListImageID)
+  Atrributes_characters = as.character(Train_Attributes[data_row])
+  Atrributes_characters_split = strsplit(Atrributes_characters,split = " ")
+  
+  attributes_row_i=c(
+    max(country %in% Atrributes_characters_split[[1]]),
+    max(culture %in% Atrributes_characters_split[[1]]),
+    max(dimension %in% Atrributes_characters_split[[1]]),
+    max(medium %in% Atrributes_characters_split[[1]]),
+    max(tags %in% Atrributes_characters_split[[1]]))
+  
+  attributies_table_2=rbind(attributies_table_2,attributes_row_i)
+  row.names(attributies_table_2)[i]=ListImageID_for_model[i]
+}
+colnames(attributies_table_2)=c("country","culture","dimension","medium","tags")
+
+
+####################################### Part 2.5 : test data set  ##########################################
+
+#ListImageID_for_test <- as.character(sample(setdiff(as.character(ListImageID),ListImageID_for_model),size = 2000))
+
+
+
+test_table=c()
+for (i in 1:length(ListImageID_for_test) ){
+  img_id=as.character(ListImageID_for_test[i])
+  img_info=resizeAndGrayscaleImg(img_id,test = TRUE)
+  
+  test_table=rbind(test_table,img_info)
+  row.names(test_table)[i]=img_id
+}
+
+head(test_table[,1:10])
+
+
+####################################### Part 3 : SVM analysis ##########################################
+
+#SVM testing
+install.packages("e1071")
+library("e1071")
+
+attribute_result_train = c()
+attribute_result_test = c()
+undefind_attribute=c()
+defind_attribute=c()
+for (i in 1: dim(attributies_table_2)[2]){
+  x=train_table
+  y=as.factor(attributies_table_2[,i])
+  svm_model <- svm(x,y)
+  #summary(svm_model)
+  pred <- predict(svm_model,x)
+  pred_test<-predict(svm_model,test_table)
+  attribute_result_train = cbind(attribute_result_train,as.numeric(pred)-1)
+  attribute_result_test = cbind(attribute_result_test,as.numeric(pred_test)-1)
+  defind_attribute=c(defind_attribute,colnames(attributies_table_2)[i])
+  colnames(attribute_result_train)[i]=colnames(attributies_table_2)[i]
+  colnames(attribute_result_test)[i]=colnames(attributies_table_2)[i]
+  
+}
+
+row.names(attribute_result_train)=row.names(train_table)
+row.names(attribute_result_test)=row.names(test_table)
+
+
+
+
+#table for correction rate
+table(attribute_result_train[,1],attributies_table_2[,1])
+table(attribute_result_train[,2],attributies_table_2[,2])
+table(attribute_result_train[,3],attributies_table_2[,3])
+table(attribute_result_train[,4],attributies_table_2[,4])
+table(attribute_result_train[,5],attributies_table_2[,5])
+
+
+
+
+######## Result of the test
+
+attribute_result_test
+
+write.csv(attribute_result_test,"F:\\project_result\\result.csv")
